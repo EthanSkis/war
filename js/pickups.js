@@ -39,34 +39,71 @@ class Pickup {
     _createMesh() {
         const group = new THREE.Group();
 
-        let geo;
         if (this.type === 'health') {
             // Cross shape for health
             const h1 = new THREE.BoxGeometry(this.def.size, this.def.size * 0.3, this.def.size * 0.3);
             const h2 = new THREE.BoxGeometry(this.def.size * 0.3, this.def.size, this.def.size * 0.3);
-            const mat = new THREE.MeshLambertMaterial({ color: this.def.color, emissive: this.def.color, emissiveIntensity: 0.3 });
-            const m1 = new THREE.Mesh(h1, mat);
-            const m2 = new THREE.Mesh(h2, mat);
-            group.add(m1);
-            group.add(m2);
+            const mat = new THREE.MeshStandardMaterial({
+                color: this.def.color,
+                emissive: this.def.color,
+                emissiveIntensity: 0.5,
+                roughness: 0.4,
+                metalness: 0.2
+            });
+            group.add(new THREE.Mesh(h1, mat));
+            group.add(new THREE.Mesh(h2, mat));
         } else if (this.type === 'armor') {
-            geo = new THREE.OctahedronGeometry(this.def.size, 0);
-            const mat = new THREE.MeshLambertMaterial({ color: this.def.color, emissive: this.def.color, emissiveIntensity: 0.3 });
+            const geo = new THREE.OctahedronGeometry(this.def.size, 1);
+            const mat = new THREE.MeshStandardMaterial({
+                color: this.def.color,
+                emissive: this.def.color,
+                emissiveIntensity: 0.4,
+                roughness: 0.2,
+                metalness: 0.7
+            });
             group.add(new THREE.Mesh(geo, mat));
         } else {
-            geo = new THREE.BoxGeometry(this.def.size, this.def.size * 0.6, this.def.size * 0.6);
-            const mat = new THREE.MeshLambertMaterial({ color: this.def.color, emissive: this.def.color, emissiveIntensity: 0.3 });
+            const geo = new THREE.BoxGeometry(this.def.size, this.def.size * 0.6, this.def.size * 0.6);
+            const mat = new THREE.MeshStandardMaterial({
+                color: this.def.color,
+                emissive: this.def.color,
+                emissiveIntensity: 0.4,
+                roughness: 0.4,
+                metalness: 0.5
+            });
             group.add(new THREE.Mesh(geo, mat));
         }
 
-        // Glow
-        const glowGeo = new THREE.SphereGeometry(this.def.size * 1.2, 8, 8);
+        // Glow sphere
+        const glowGeo = new THREE.SphereGeometry(this.def.size * 1.2, 10, 10);
         const glowMat = new THREE.MeshBasicMaterial({
             color: this.def.color,
             transparent: true,
-            opacity: 0.15
+            opacity: 0.12,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
         });
         group.add(new THREE.Mesh(glowGeo, glowMat));
+
+        // Rotating ring
+        const ringGeo = new THREE.RingGeometry(this.def.size * 0.8, this.def.size * 0.95, 24);
+        const ringMat = new THREE.MeshBasicMaterial({
+            color: this.def.color,
+            transparent: true,
+            opacity: 0.25,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = Math.PI / 2;
+        ring.name = 'pickupRing';
+        group.add(ring);
+
+        // Point light for colored ground glow
+        const light = new THREE.PointLight(this.def.color, 0.3, 3);
+        light.position.y = -0.2;
+        group.add(light);
 
         group.position.copy(this.position);
         return group;
@@ -86,6 +123,13 @@ class Pickup {
         // Bob and rotate
         this.mesh.position.y = this.baseY + Math.sin(time * this.def.bobSpeed) * 0.15;
         this.mesh.rotation.y += dt * 1.5;
+
+        // Animate ring on a different axis
+        const ring = this.mesh.getObjectByName('pickupRing');
+        if (ring) {
+            ring.rotation.x = Math.PI / 2 + Math.sin(time * 1.2) * 0.4;
+            ring.rotation.z += dt * 2;
+        }
     }
 
     tryPickup(entity) {

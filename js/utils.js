@@ -16,6 +16,7 @@ const GAME_CONSTANTS = {
     RESPAWN_TIME: 3,
     MATCH_DURATION: 300, // 5 minutes
     PICKUP_RESPAWN_TIME: 15,
+    SPAWN_PROTECTION_TIME: 5,
 };
 
 const BOT_NAMES = [

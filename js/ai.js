@@ -75,6 +75,10 @@ class Bot {
         this.targetPitch = 0;
         this.onGround = true;
 
+        // Spawn protection
+        this.spawnProtectionTimer = 0;
+        this.spawnShield = null;
+
         // Stats
         this.health = GAME_CONSTANTS.MAX_HEALTH;
         this.armor = 0;
@@ -133,32 +137,112 @@ class Bot {
     _createMesh() {
         const group = new THREE.Group();
 
-        // Body
-        const bodyGeo = new THREE.CylinderGeometry(0.3, 0.35, 1.2, 8);
         const bodyColor = this.team === 'red' ? 0xcc3333 :
                          this.team === 'blue' ? 0x3333cc : 0x888888;
-        const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
+        const teamEmissive = this.team === 'red' ? 0x440000 :
+                            this.team === 'blue' ? 0x000044 : 0x222222;
+
+        // Body (base layer)
+        const bodyGeo = new THREE.CylinderGeometry(0.3, 0.35, 1.2, 12);
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: 0x444444,
+            roughness: 0.7,
+            metalness: 0.15
+        });
         const body = new THREE.Mesh(bodyGeo, bodyMat);
         body.position.y = 0.6;
         body.castShadow = true;
         group.add(body);
 
+        // Armor vest overlay
+        const vestGeo = new THREE.CylinderGeometry(0.33, 0.36, 0.7, 12);
+        const vestMat = new THREE.MeshStandardMaterial({
+            color: bodyColor,
+            roughness: 0.5,
+            metalness: 0.3,
+            emissive: teamEmissive,
+            emissiveIntensity: 0.4
+        });
+        const vest = new THREE.Mesh(vestGeo, vestMat);
+        vest.position.y = 0.75;
+        vest.castShadow = true;
+        group.add(vest);
+
+        // Shoulder pads
+        for (const side of [-1, 1]) {
+            const padGeo = new THREE.SphereGeometry(0.12, 8, 6);
+            const padMat = new THREE.MeshStandardMaterial({
+                color: bodyColor,
+                roughness: 0.4,
+                metalness: 0.4,
+                emissive: teamEmissive,
+                emissiveIntensity: 0.3
+            });
+            const pad = new THREE.Mesh(padGeo, padMat);
+            pad.position.set(side * 0.32, 1.1, 0);
+            pad.scale.set(1, 0.7, 1);
+            group.add(pad);
+        }
+
         // Head
-        const headGeo = new THREE.SphereGeometry(0.2, 8, 8);
-        const headMat = new THREE.MeshLambertMaterial({ color: 0xddbb99 });
+        const headGeo = new THREE.SphereGeometry(0.2, 12, 10);
+        const headMat = new THREE.MeshStandardMaterial({
+            color: 0xddbb99,
+            roughness: 0.6,
+            metalness: 0.05
+        });
         const head = new THREE.Mesh(headGeo, headMat);
         head.position.y = 1.4;
         head.castShadow = true;
         group.add(head);
         this.headMesh = head;
 
+        // Visor
+        const visorGeo = new THREE.BoxGeometry(0.28, 0.08, 0.12);
+        const visorMat = new THREE.MeshStandardMaterial({
+            color: bodyColor,
+            roughness: 0.1,
+            metalness: 0.8,
+            emissive: bodyColor,
+            emissiveIntensity: 0.5
+        });
+        const visor = new THREE.Mesh(visorGeo, visorMat);
+        visor.position.set(0, 1.42, -0.16);
+        group.add(visor);
+
         // Weapon visual
-        const gunGeo = new THREE.BoxGeometry(0.08, 0.08, 0.5);
-        const gunMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const gunGeo = new THREE.BoxGeometry(0.06, 0.1, 0.55);
+        const gunMat = new THREE.MeshStandardMaterial({
+            color: 0x222222,
+            roughness: 0.3,
+            metalness: 0.8
+        });
         const gun = new THREE.Mesh(gunGeo, gunMat);
         gun.position.set(0.25, 1.0, -0.3);
         group.add(gun);
         this.gunMesh = gun;
+
+        // Gun barrel detail
+        const barrelGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.2, 6);
+        const barrelMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.2 });
+        const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.set(0.25, 1.0, -0.65);
+        group.add(barrel);
+
+        // Spawn protection shield
+        const shieldGeo = new THREE.SphereGeometry(0.8, 16, 12);
+        const shieldMat = new THREE.MeshBasicMaterial({
+            color: 0x44ddff,
+            transparent: true,
+            opacity: 0,
+            wireframe: true,
+            depthWrite: false
+        });
+        this.spawnShield = new THREE.Mesh(shieldGeo, shieldMat);
+        this.spawnShield.position.y = 0.8;
+        this.spawnShield.visible = false;
+        group.add(this.spawnShield);
 
         return group;
     }
@@ -235,6 +319,23 @@ class Bot {
         // Auto reload
         if (this.weapon.currentAmmo === 0 && !this.weapon.isReloading && this.weapon.reserveAmmo > 0) {
             this.weapon.startReload(time);
+        }
+
+        // Spawn protection timer
+        if (this.spawnProtectionTimer > 0) {
+            this.spawnProtectionTimer = Math.max(0, this.spawnProtectionTimer - dt);
+        }
+
+        // Update spawn shield visual
+        if (this.spawnShield) {
+            if (this.spawnProtectionTimer > 0) {
+                this.spawnShield.visible = true;
+                this.spawnShield.material.opacity = 0.15 + 0.12 * Math.sin(time * 8);
+                this.spawnShield.rotation.y += dt * 2;
+                this.spawnShield.rotation.x += dt * 1.3;
+            } else {
+                this.spawnShield.visible = false;
+            }
         }
 
         // Update visual
@@ -731,6 +832,7 @@ class Bot {
         this.target = null;
         this.lastKnownEnemyPos = null;
         this.reactionTimer = 0;
+        this.spawnProtectionTimer = GAME_CONSTANTS.SPAWN_PROTECTION_TIME;
 
         for (const w of this.weapons) {
             w.currentAmmo = w.def.magSize;

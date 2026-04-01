@@ -51,9 +51,30 @@ class Game {
     }
 
     _createMuzzleFlash() {
-        const geo = new THREE.SphereGeometry(0.15, 6, 6);
-        const mat = new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0 });
-        return new THREE.Mesh(geo, mat);
+        // Create a radial gradient texture for a more convincing flash
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gradient.addColorStop(0, 'rgba(255,230,180,1)');
+        gradient.addColorStop(0.3, 'rgba(255,170,68,0.8)');
+        gradient.addColorStop(0.7, 'rgba(255,100,20,0.3)');
+        gradient.addColorStop(1, 'rgba(255,60,0,0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 64, 64);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({
+            map: tex,
+            transparent: true,
+            opacity: 0,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(0.6, 0.6, 0.6);
+        return sprite;
     }
 
     startMatch(options) {
@@ -153,6 +174,9 @@ class Game {
         // Update player
         if (this.player.isAlive) {
             this.player.update(dt, this.colliders, time);
+            if (this.player.spawnProtectionTimer > 0) {
+                this.player.spawnProtectionTimer = Math.max(0, this.player.spawnProtectionTimer - dt);
+            }
             this._handlePlayerShooting(time);
         }
 
@@ -337,6 +361,9 @@ class Game {
     }
 
     _applyDamage(target, damage, attacker, headshot) {
+        // Spawn protection: no damage while protected
+        if (target.spawnProtectionTimer > 0) return;
+
         const killed = target.takeDamage(damage, attacker.name);
 
         if (target === this.player) {
@@ -377,17 +404,52 @@ class Game {
     }
 
     _createTracer(start, end) {
-        const points = [start, end];
-        const geo = new THREE.BufferGeometry().setFromPoints(points);
-        const mat = new THREE.LineBasicMaterial({
-            color: 0xffaa44,
+        // Billboard plane tracer for visible thickness (WebGL clamps linewidth to 1)
+        const dir = new THREE.Vector3().subVectors(end, start);
+        const length = dir.length();
+        dir.normalize();
+
+        // Create a thin plane oriented toward the camera
+        const geo = new THREE.PlaneGeometry(length, 0.04);
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0xffcc44,
             transparent: true,
-            opacity: 0.6,
-            linewidth: 1,
+            opacity: 0.7,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
         });
-        const line = new THREE.Line(geo, mat);
-        this.scene.add(line);
-        this.tracers.push({ mesh: line, life: 0.1 });
+        const mesh = new THREE.Mesh(geo, mat);
+
+        // Position and orient the tracer
+        const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+        mesh.position.copy(mid);
+        mesh.lookAt(this.camera.position);
+
+        // Rotate to align with bullet direction (in the plane facing camera)
+        const projected = dir.clone();
+        const camDir = new THREE.Vector3().subVectors(this.camera.position, mid).normalize();
+        const right = new THREE.Vector3().crossVectors(camDir, projected).normalize();
+        const up = new THREE.Vector3().crossVectors(projected, right).normalize();
+        mesh.quaternion.setFromRotationMatrix(
+            new THREE.Matrix4().makeBasis(projected, up, right.negate())
+        );
+
+        this.scene.add(mesh);
+        this.tracers.push({ mesh, life: 0.1 });
+
+        // Bright muzzle point
+        const pointGeo = new THREE.SphereGeometry(0.03, 4, 4);
+        const pointMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending
+        });
+        const point = new THREE.Mesh(pointGeo, pointMat);
+        point.position.copy(start);
+        this.scene.add(point);
+        this.tracers.push({ mesh: point, life: 0.08 });
     }
 
     _getValidSpawn(spawnPoints) {

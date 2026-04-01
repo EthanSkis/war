@@ -22,6 +22,8 @@ class HUD {
         this.minimapCtx = this.minimapCanvas.getContext('2d');
         this.hudElement = document.getElementById('hud');
 
+        this.spawnProtection = document.getElementById('spawn-protection');
+
         this.killfeedEntries = [];
         this.hitMarkerTimer = 0;
         this.damageTimer = 0;
@@ -51,6 +53,14 @@ class HUD {
         const armorPct = (player.armor / GAME_CONSTANTS.MAX_ARMOR) * 100;
         this.armorFill.style.width = armorPct + '%';
         this.armorText.textContent = Math.ceil(player.armor);
+
+        // Spawn protection indicator
+        if (player.spawnProtectionTimer > 0) {
+            this.spawnProtection.style.opacity = '1';
+            this.spawnProtection.textContent = 'PROTECTED ' + player.spawnProtectionTimer.toFixed(1) + 's';
+        } else {
+            this.spawnProtection.style.opacity = '0';
+        }
 
         // Ammo
         const weapon = player.weapon;
