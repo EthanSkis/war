@@ -113,6 +113,19 @@
             min-width: 40px;
         }
 
+        #spawn-protection {
+            position: absolute;
+            bottom: 90px; left: 30px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #44ddff;
+            text-shadow: 0 0 10px rgba(68,200,255,0.7), 0 0 20px rgba(68,170,255,0.4);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
         #ammo-display {
             position: absolute;
             bottom: 30px; right: 30px;
@@ -746,6 +759,8 @@
             <span id="armor-text">0</span>
         </div>
 
+        <div id="spawn-protection"></div>
+
         <div id="ammo-display">
             <div id="ammo-current">30</div>
             <div id="ammo-reserve">/ 90</div>
@@ -788,6 +803,7 @@
 
     <!-- Game modules -->
     <script src="js/utils.js"></script>
+    <script src="js/textures.js"></script>
     <script src="js/touch.js"></script>
     <script src="js/audio.js"></script>
     <script src="js/weapons.js"></script>

@@ -10,6 +10,7 @@ const MAPS = {
         ambientLight: 0.3,
         fogColor: 0x111111,
         fogDensity: 0.02,
+        theme: { floor: 'concrete', wall: 'brick', ceiling: 'metal', cover: 'crate' },
         spawnPoints: [
             { x: -25, z: -25 }, { x: 25, z: -25 }, { x: -25, z: 25 }, { x: 25, z: 25 },
             { x: 0, z: -25 }, { x: 0, z: 25 }, { x: -25, z: 0 }, { x: 25, z: 0 },
@@ -73,6 +74,7 @@ const MAPS = {
         ambientLight: 0.6,
         fogColor: 0xC4A882,
         fogDensity: 0.008,
+        theme: { floor: 'sand', wall: 'rock', ceiling: null, cover: 'rock' },
         spawnPoints: [
             { x: -40, z: -40 }, { x: 40, z: -40 }, { x: -40, z: 40 }, { x: 40, z: 40 },
             { x: 0, z: -40 }, { x: 0, z: 40 }, { x: -40, z: 0 }, { x: 40, z: 0 },
@@ -128,6 +130,7 @@ const MAPS = {
         ambientLight: 0.35,
         fogColor: 0x222233,
         fogDensity: 0.015,
+        theme: { floor: 'tiles', wall: 'sciFiPanel', ceiling: 'metal', cover: 'metal' },
         spawnPoints: [
             { x: -35, z: -35 }, { x: 35, z: -35 }, { x: -35, z: 35 }, { x: 35, z: 35 },
             { x: 0, z: -35 }, { x: 0, z: 35 }, { x: -35, z: 0 }, { x: 35, z: 0 },
@@ -191,32 +194,62 @@ class MapBuilder {
         this.scene = scene;
         this.colliders = [];
         this.meshes = [];
+        this.textures = [];
+    }
+
+    _getTexData(type, color) {
+        switch (type) {
+            case 'concrete': return textureGen.concrete(color);
+            case 'brick': return textureGen.brick(color, 0x555555);
+            case 'metal': return textureGen.metal(color);
+            case 'rock': return textureGen.rock(color);
+            case 'sand': return textureGen.sand(color);
+            case 'sciFiPanel': return textureGen.sciFiPanel(color);
+            case 'tiles': return textureGen.tiles(color);
+            case 'crate': return textureGen.crate(color);
+            default: return textureGen.concrete(color);
+        }
     }
 
     build(mapId) {
         const map = MAPS[mapId];
         this.colliders = [];
         this.meshes = [];
+        this.textures = [];
+
+        const theme = map.theme || {};
 
         // Floor
         const floorGeo = new THREE.PlaneGeometry(map.size.x, map.size.z);
-        const floorMat = new THREE.MeshLambertMaterial({ color: map.floorColor });
+        const floorTexData = this._getTexData(theme.floor || 'concrete', map.floorColor);
+        const floorRepeatX = map.size.x / 4;
+        const floorRepeatY = map.size.z / 4;
+        const floorMat = textureGen.buildMaterial(floorTexData, {
+            repeatX: floorRepeatX, repeatY: floorRepeatY,
+            roughness: 0.85, metalness: 0.05
+        });
         const floor = new THREE.Mesh(floorGeo, floorMat);
         floor.rotation.x = -Math.PI / 2;
         floor.receiveShadow = true;
         this.scene.add(floor);
         this.meshes.push(floor);
 
-        // Grid lines on floor for visual reference
-        const gridHelper = new THREE.GridHelper(Math.max(map.size.x, map.size.z), 30, 0x333333, 0x222222);
-        gridHelper.position.y = 0.01;
-        this.scene.add(gridHelper);
-        this.meshes.push(gridHelper);
-
         // Ceiling (indoor maps)
-        if (map.ceilingHeight > 0) {
+        if (map.ceilingHeight > 0 && theme.ceiling) {
             const ceilGeo = new THREE.PlaneGeometry(map.size.x, map.size.z);
-            const ceilMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+            const ceilTexData = this._getTexData(theme.ceiling, 0x444444);
+            const ceilMat = textureGen.buildMaterial(ceilTexData, {
+                repeatX: map.size.x / 6, repeatY: map.size.z / 6,
+                roughness: 0.7, metalness: 0.2
+            });
+            const ceiling = new THREE.Mesh(ceilGeo, ceilMat);
+            ceiling.rotation.x = Math.PI / 2;
+            ceiling.position.y = map.ceilingHeight;
+            this.scene.add(ceiling);
+            this.meshes.push(ceiling);
+        } else if (map.ceilingHeight > 0) {
+            const ceilGeo = new THREE.PlaneGeometry(map.size.x, map.size.z);
+            const ceilMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
             const ceiling = new THREE.Mesh(ceilGeo, ceilMat);
             ceiling.rotation.x = Math.PI / 2;
             ceiling.position.y = map.ceilingHeight;
@@ -225,20 +258,38 @@ class MapBuilder {
         }
 
         // Walls/obstacles
+        const wallTexData = this._getTexData(theme.wall || 'concrete', map.wallColor);
+        const coverTexData = this._getTexData(theme.cover || theme.wall || 'concrete', map.wallColor);
+
         for (const w of map.walls) {
             const [minX, minZ, maxX, maxZ, height] = w;
             const width = maxX - minX;
             const depth = maxZ - minZ;
             const geo = new THREE.BoxGeometry(width, height, depth);
 
-            // Vary color slightly for visual interest
-            const colorVariance = 0.1;
-            const baseColor = new THREE.Color(map.wallColor);
-            const r = clamp(baseColor.r + (Math.random() - 0.5) * colorVariance, 0, 1);
-            const g = clamp(baseColor.g + (Math.random() - 0.5) * colorVariance, 0, 1);
-            const b = clamp(baseColor.b + (Math.random() - 0.5) * colorVariance, 0, 1);
+            // Classify: short walls are cover, tall are structural
+            const isCover = height < 3;
+            const texData = isCover ? coverTexData : wallTexData;
 
-            const mat = new THREE.MeshLambertMaterial({ color: new THREE.Color(r, g, b) });
+            // Scale UV repeats to wall dimensions for consistent texel density
+            const maxDim = Math.max(width, depth);
+            const repX = Math.max(1, maxDim / 3);
+            const repY = Math.max(1, height / 3);
+
+            // Slight color tint variation per wall
+            const colorVariance = 0.08;
+            const baseColor = new THREE.Color(map.wallColor);
+            const cr = clamp(baseColor.r + (Math.random() - 0.5) * colorVariance, 0, 1);
+            const cg = clamp(baseColor.g + (Math.random() - 0.5) * colorVariance, 0, 1);
+            const cb = clamp(baseColor.b + (Math.random() - 0.5) * colorVariance, 0, 1);
+
+            const mat = textureGen.buildMaterial(texData, {
+                repeatX: repX, repeatY: repY,
+                roughness: isCover ? 0.9 : 0.75,
+                metalness: isCover ? 0.05 : 0.1,
+                color: new THREE.Color(cr, cg, cb)
+            });
+
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.set(minX + width / 2, height / 2, minZ + depth / 2);
             mesh.castShadow = true;
@@ -306,10 +357,16 @@ class MapBuilder {
         for (const mesh of this.meshes) {
             this.scene.remove(mesh);
             if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) mesh.material.dispose();
+            if (mesh.material) {
+                if (mesh.material.map) mesh.material.map.dispose();
+                if (mesh.material.normalMap) mesh.material.normalMap.dispose();
+                if (mesh.material.roughnessMap) mesh.material.roughnessMap.dispose();
+                mesh.material.dispose();
+            }
         }
         this.meshes = [];
         this.colliders = [];
         this.scene.fog = null;
+        textureGen.dispose();
     }
 }

@@ -23,6 +23,7 @@ class Player {
         this.isAlive = true;
         this.name = 'Player';
         this.team = 'none';
+        this.spawnProtectionTimer = 0;
 
         // Weapons
         this.weapons = [
@@ -352,6 +353,7 @@ class Player {
         this.armor = 0;
         this.isAlive = true;
         this.isCrouching = false;
+        this.spawnProtectionTimer = GAME_CONSTANTS.SPAWN_PROTECTION_TIME;
 
         // Refill ammo
         for (const w of this.weapons) {
