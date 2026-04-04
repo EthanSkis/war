@@ -115,8 +115,7 @@ class Game {
             }
 
             const bot = new Bot(name, this.difficulty, team, this.scene);
-            const spawnIdx = (i + 1) % mapDef.spawnPoints.length;
-            bot.respawn(mapDef.spawnPoints[spawnIdx]);
+            bot.respawn(this._getValidSpawn(mapDef.spawnPoints));
             this.bots.push(bot);
         }
 
@@ -474,13 +473,22 @@ class Game {
     }
 
     _getValidSpawn(spawnPoints) {
-        const radius = 0.4;
-        const valid = spawnPoints.filter(sp =>
-            !this.colliders.some(c =>
-                sp.x + radius > c.min.x && sp.x - radius < c.max.x &&
-                sp.z + radius > c.min.z && sp.z - radius < c.max.z
-            )
-        );
+        const wallRadius = 0.4;
+        const entityRadius = 2.0;
+        const livingEntities = this._getAllEntities().filter(e => e.isAlive);
+        const valid = spawnPoints.filter(sp => {
+            const blockedByWall = this.colliders.some(c =>
+                sp.x + wallRadius > c.min.x && sp.x - wallRadius < c.max.x &&
+                sp.z + wallRadius > c.min.z && sp.z - wallRadius < c.max.z
+            );
+            if (blockedByWall) return false;
+            const blockedByEntity = livingEntities.some(e => {
+                const dx = e.position.x - sp.x;
+                const dz = e.position.z - sp.z;
+                return Math.sqrt(dx * dx + dz * dz) < entityRadius;
+            });
+            return !blockedByEntity;
+        });
         return randomElement(valid.length > 0 ? valid : spawnPoints);
     }
 
