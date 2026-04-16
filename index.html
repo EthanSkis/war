@@ -1369,6 +1369,14 @@ function switchWeapon(idx) {
 }
 
 function doWeaponSwap(idx) {
+  // Cancel any in-progress reload on the outgoing weapon
+  const prev = state.weapons[state.player.currentWeapon];
+  if (prev && prev.reloadTimeout) {
+    clearTimeout(prev.reloadTimeout);
+    prev.reloadTimeout = null;
+    prev.reloading = false;
+  }
+  reloadAnim.active = false;
   if (currentWeaponMesh) weaponScene.remove(currentWeaponMesh);
   state.player.currentWeapon = idx;
   currentWeaponMesh = weaponModels[idx];
@@ -1544,10 +1552,10 @@ function spawnEnemies() {
   for (let i = 0; i < CFG.spawnEnemies; i++) {
     let x, z;
     const side = Math.floor(Math.random() * 4);
-    if (side === 0) { x = -half + Math.random() * CFG.mapSize - 5; z = -half; }
-    else if (side === 1) { x = -half + Math.random() * CFG.mapSize - 5; z = half; }
-    else if (side === 2) { x = -half; z = -half + Math.random() * CFG.mapSize - 5; }
-    else { x = half; z = -half + Math.random() * CFG.mapSize - 5; }
+    if (side === 0) { x = -half + Math.random() * (CFG.mapSize - 10); z = -half; }
+    else if (side === 1) { x = -half + Math.random() * (CFG.mapSize - 10); z = half; }
+    else if (side === 2) { x = -half; z = -half + Math.random() * (CFG.mapSize - 10); }
+    else { x = half; z = -half + Math.random() * (CFG.mapSize - 10); }
     const enemy = createEnemy(enemyNames[i % enemyNames.length], new THREE.Vector3(x, 0, z));
     state.enemies.push(enemy);
   }
@@ -2462,12 +2470,12 @@ function tryShoot() {
 
   // Spread
   const adsMult = 1 - p.adsProgress * 0.6;
-  w.currentSpread = Math.min(w.maxSpread || w.spread * 3, w.currentSpread + (w.spreadBloom || 0.01)) * adsMult;
+  w.currentSpread = Math.min(w.maxSpread || w.spread * 3, w.currentSpread + (w.spreadBloom || 0.01));
 
   // Shoot raycast
   const pellets = w.pellets || 1;
   for (let i = 0; i < pellets; i++) {
-    const spread = w.scopeZoom ? (w.scopedSpread || 0.002) : w.currentSpread;
+    const spread = w.scopeZoom ? (w.scopedSpread || 0.002) : w.currentSpread * adsMult;
     const dir = new THREE.Vector3(
       (Math.random() - 0.5) * spread,
       (Math.random() - 0.5) * spread,
@@ -2558,15 +2566,16 @@ function reloadWeapon() {
   playSound('reload');
 
   const reloadTime = w.shellReload ? w.reloadTime * (w.maxMag - w.mag) : w.reloadTime;
-  reloadAnim = { active: true, time: 0, duration: reloadTime, phase: 0 };
+  reloadAnim = { active: true, time: 0, duration: reloadTime, phase: 0, weapon: w };
 
-  setTimeout(() => {
+  w.reloadTimeout = setTimeout(() => {
     const needed = w.maxMag - w.mag;
     const available = Math.min(needed, w.reserve);
     w.mag += available;
     w.reserve -= available;
     w.reloading = false;
-    reloadAnim.active = false;
+    w.reloadTimeout = null;
+    if (reloadAnim.weapon === w) reloadAnim.active = false;
     updateHUD();
   }, reloadTime * 1000);
 }
@@ -2798,7 +2807,19 @@ function respawnPlayer() {
   const p = state.player;
   p.hp = 100;
   p.armor = 50;
-  p.pos.set((Math.random() - 0.5) * 20, 0, (Math.random() - 0.5) * 20);
+  let nx = 0, nz = 0;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    nx = (Math.random() - 0.5) * 20;
+    nz = (Math.random() - 0.5) * 20;
+    let clear = true;
+    for (const e of state.enemies) {
+      if (e.dead) continue;
+      const dx = e.mesh.position.x - nx, dz = e.mesh.position.z - nz;
+      if (dx * dx + dz * dz < 9) { clear = false; break; }
+    }
+    if (clear) break;
+  }
+  p.pos.set(nx, 0, nz);
   p.vel.set(0, 0, 0);
   state.dead = false;
   p.spawnProtection = state.time + 5;
